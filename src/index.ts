@@ -32,6 +32,7 @@ import { sendTelegram, flushTelegramQueue } from './logging/Telegram'
 import { sendPushPlus, flushPushPlusQueue } from './logging/PushPlus'
 import { sendServerChan, flushServerChanQueue } from './logging/ServerChan'
 import { sendClawBot, flushClawBotQueue, ensureClawBotReady } from './logging/ClawBot'
+import { sendWeCom, flushWeComQueue } from './logging/WeCom'
 import type { DashboardData } from './interface/DashboardData'
 import type { AppDashboardData } from './interface/AppDashBoardData'
 import type { AppEarnablePoints } from './interface/Points'
@@ -79,7 +80,8 @@ async function flushAllWebhooks(timeoutMs = 5000): Promise<void> {
         flushTelegramQueue(timeoutMs),
         flushPushPlusQueue(timeoutMs),
         flushServerChanQueue(timeoutMs),
-        flushClawBotQueue(timeoutMs)
+        flushClawBotQueue(timeoutMs),
+        flushWeComQueue(timeoutMs)
     ])
     closeSessionStore()
 }
@@ -392,6 +394,7 @@ export class MicrosoftRewardsBot {
                 await this.sendPushPlusSummary(allAccountStats, runStartTime, hadWorkerFailure)
                 await this.sendServerChanSummary(allAccountStats, runStartTime, hadWorkerFailure)
                 await this.sendClawBotSummary(allAccountStats, runStartTime, hadWorkerFailure)
+                await this.sendWeComSummary(allAccountStats, runStartTime, hadWorkerFailure)
                 await flushAllWebhooks()
 
                 if (!hadWorkerFailure) markRunSucceeded()
@@ -513,6 +516,20 @@ export class MicrosoftRewardsBot {
 
         const content = this.buildSummaryMessage(accountStats, runStartTime, hadWorkerFailure)
         await sendClawBot(clawbot, content)
+    }
+
+    private async sendWeComSummary(
+        accountStats: AccountStats[],
+        runStartTime: number,
+        hadWorkerFailure: boolean
+    ): Promise<void> {
+        const wecom = this.config?.webhook?.wecom
+        if (!wecom?.enabled || !wecom.webhookKey) {
+            return
+        }
+
+        const content = this.buildSummaryMessage(accountStats, runStartTime, hadWorkerFailure)
+        await sendWeCom(wecom, content)
     }
 
     private async runTasks(accounts: Account[], runStartTime: number): Promise<AccountStats[]> {
@@ -667,6 +684,7 @@ export class MicrosoftRewardsBot {
             await this.sendPushPlusSummary(accountStats, runStartTime, hadFailure)
             await this.sendServerChanSummary(accountStats, runStartTime, hadFailure)
             await this.sendClawBotSummary(accountStats, runStartTime, hadFailure)
+            await this.sendWeComSummary(accountStats, runStartTime, hadFailure)
             await flushAllWebhooks()
 
             if (!hadFailure) markRunSucceeded()

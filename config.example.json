@@ -101,6 +101,12 @@
             "enabled": false,
             "authFile": ""
         },
+        "wecom": {
+            "enabled": false,
+            "webhookKey": "",
+            "msgType": "markdown",
+            "title": "Microsoft Rewards 任务摘要"
+        },
         "ntfy": {
             "enabled": false,
             "url": "",

@@ -132,6 +132,14 @@ const WebhookSchema = z.object({
             authFile: z.string().optional()
         })
         .optional(),
+    wecom: z
+        .object({
+            enabled: z.boolean().optional(),
+            webhookKey: z.string().optional(),
+            msgType: z.enum(['markdown', 'text']).optional(),
+            title: z.string().optional()
+        })
+        .optional(),
     webhookLogFilter: LogFilterSchema
 })
 

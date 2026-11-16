@@ -127,3 +127,13 @@ dmypy.json
 
 # Pyre type checker
 .pyre/
+
+# ── 运行时敏感文件（严禁提交）────────────────────────────────
+# config.json 可能包含 webhook key / token，由 config.example.json 生成
+config.json
+# 会话数据库（含登录态 cookies）
+sessions/
+# ClawBot 登录凭证
+clawbot-auth.json
+# CI 运行日志
+run.log

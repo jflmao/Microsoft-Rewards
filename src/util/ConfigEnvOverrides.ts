@@ -6,6 +6,8 @@ export interface EnvOverrideEntry {
     env: string
     path: string // dotted path into config.json
     type: OverrideType
+    /** 值为凭证（token / key / password），打印时必须脱敏 */
+    sensitive?: boolean
 }
 
 export const ENV_OVERRIDES: EnvOverrideEntry[] = [
@@ -51,7 +53,7 @@ export const ENV_OVERRIDES: EnvOverrideEntry[] = [
     { env: 'CONFIG_SEARCH_MAX_BONUS_SEARCHES', path: 'searchSettings.maxBonusSearches', type: 'number' },
     { env: 'CONFIG_SEARCH_QUERY_ENGINES', path: 'searchSettings.queryEngines', type: 'array' },
     { env: 'CONFIG_SEARCH_ON_BING_LOCAL', path: 'searchOnBingLocalQueries', type: 'bool' },
-    { env: 'CONFIG_CHINA_API_APPKEY', path: 'searchSettings.chinaApi.appkey', type: 'string' },
+    { env: 'CONFIG_CHINA_API_APPKEY', path: 'searchSettings.chinaApi.appkey', type: 'string', sensitive: true },
 
     // Activities
     { env: 'CONFIG_ACTIVITY_URL_REWARD', path: 'activities.urlReward', type: 'bool' },
@@ -75,23 +77,23 @@ export const ENV_OVERRIDES: EnvOverrideEntry[] = [
 
     // Discord webhook
     { env: 'CONFIG_DISCORD_ENABLED', path: 'webhook.discord.enabled', type: 'bool' },
-    { env: 'CONFIG_DISCORD_URL', path: 'webhook.discord.url', type: 'string' },
+    { env: 'CONFIG_DISCORD_URL', path: 'webhook.discord.url', type: 'string', sensitive: true },
 
     // Telegram webhook
     { env: 'CONFIG_TELEGRAM_ENABLED', path: 'webhook.telegram.enabled', type: 'bool' },
-    { env: 'CONFIG_TELEGRAM_BOTTOKEN', path: 'webhook.telegram.botToken', type: 'string' },
+    { env: 'CONFIG_TELEGRAM_BOTTOKEN', path: 'webhook.telegram.botToken', type: 'string', sensitive: true },
     { env: 'CONFIG_TELEGRAM_CHATID', path: 'webhook.telegram.chatId', type: 'string' },
 
     // PushPlus webhook（国内微信推送）
     { env: 'CONFIG_PUSHPLUS_ENABLED', path: 'webhook.pushplus.enabled', type: 'bool' },
-    { env: 'CONFIG_PUSHPLUS_TOKEN', path: 'webhook.pushplus.token', type: 'string' },
+    { env: 'CONFIG_PUSHPLUS_TOKEN', path: 'webhook.pushplus.token', type: 'string', sensitive: true },
     { env: 'CONFIG_PUSHPLUS_TITLE', path: 'webhook.pushplus.title', type: 'string' },
     { env: 'CONFIG_PUSHPLUS_TEMPLATE', path: 'webhook.pushplus.template', type: 'string' },
     { env: 'CONFIG_PUSHPLUS_CHANNEL', path: 'webhook.pushplus.channel', type: 'string' },
 
     // Server酱 webhook（国内微信推送，sendKey 在 sct.ftqq.com 获取）
     { env: 'CONFIG_SERVERCHAN_ENABLED', path: 'webhook.serverchan.enabled', type: 'bool' },
-    { env: 'CONFIG_SERVERCHAN_SENDKEY', path: 'webhook.serverchan.sendKey', type: 'string' },
+    { env: 'CONFIG_SERVERCHAN_SENDKEY', path: 'webhook.serverchan.sendKey', type: 'string', sensitive: true },
     { env: 'CONFIG_SERVERCHAN_TITLE', path: 'webhook.serverchan.title', type: 'string' },
 
     // Humanize 拟人化运行策略（quietHours 为数组结构，请直接编辑 config.json）
@@ -106,11 +108,17 @@ export const ENV_OVERRIDES: EnvOverrideEntry[] = [
     { env: 'CONFIG_CLAWBOT_ENABLED', path: 'webhook.clawbot.enabled', type: 'bool' },
     { env: 'CONFIG_CLAWBOT_AUTHFILE', path: 'webhook.clawbot.authFile', type: 'string' },
 
+    // 企业微信群机器人 webhook（CI 中通过 Secrets 注入 webhookKey）
+    { env: 'CONFIG_WECOM_ENABLED', path: 'webhook.wecom.enabled', type: 'bool' },
+    { env: 'CONFIG_WECOM_WEBHOOK_KEY', path: 'webhook.wecom.webhookKey', type: 'string', sensitive: true },
+    { env: 'CONFIG_WECOM_MSGTYPE', path: 'webhook.wecom.msgType', type: 'string' },
+    { env: 'CONFIG_WECOM_TITLE', path: 'webhook.wecom.title', type: 'string' },
+
     // ntfy webhook (tags are comma-separated e.g. "bot,notify")
     { env: 'CONFIG_NTFY_ENABLED', path: 'webhook.ntfy.enabled', type: 'bool' },
     { env: 'CONFIG_NTFY_URL', path: 'webhook.ntfy.url', type: 'string' },
     { env: 'CONFIG_NTFY_TOPIC', path: 'webhook.ntfy.topic', type: 'string' },
-    { env: 'CONFIG_NTFY_TOKEN', path: 'webhook.ntfy.token', type: 'string' },
+    { env: 'CONFIG_NTFY_TOKEN', path: 'webhook.ntfy.token', type: 'string', sensitive: true },
     { env: 'CONFIG_NTFY_TITLE', path: 'webhook.ntfy.title', type: 'string' },
     { env: 'CONFIG_NTFY_PRIORITY', path: 'webhook.ntfy.priority', type: 'number' },
     { env: 'CONFIG_NTFY_TAGS', path: 'webhook.ntfy.tags', type: 'array' },
@@ -160,6 +168,7 @@ export interface ComputedOverride {
     env: string
     path: string
     value: unknown
+    sensitive?: boolean
 }
 
 export interface OverrideError {
@@ -179,7 +188,7 @@ export function computeOverrides(env: NodeJS.ProcessEnv = process.env): {
             if (!(entry.env in env)) continue
             const raw = env[entry.env] ?? ''
             const value = raw === '' ? [] : raw.split(',').map(s => s.trim())
-            applied.push({ env: entry.env, path: entry.path, value })
+            applied.push({ env: entry.env, path: entry.path, value, sensitive: entry.sensitive })
             continue
         }
 
@@ -187,7 +196,7 @@ export function computeOverrides(env: NodeJS.ProcessEnv = process.env): {
         if (raw === undefined || raw === '') continue
         try {
             const value = coerceScalar(raw, entry.type, entry.env)
-            applied.push({ env: entry.env, path: entry.path, value })
+            applied.push({ env: entry.env, path: entry.path, value, sensitive: entry.sensitive })
         } catch (err) {
             errors.push({ env: entry.env, message: err instanceof Error ? err.message : String(err) })
         }
@@ -296,7 +305,10 @@ Examples:
                 process.exit(1)
             }
             report.forced.forEach(f => console.log(`[entrypoint]   .${f.path} = ${f.value} (forced)`))
-            report.applied.forEach(a => console.log(`[entrypoint]   .${a.path} = ${JSON.stringify(a.value)}`))
+            report.applied.forEach(a => {
+                const shown = a.sensitive ? '"***"' : JSON.stringify(a.value)
+                console.log(`[entrypoint]   .${a.path} = ${shown}`)
+            })
             console.log(`[entrypoint] Applied ${report.applied.length} override(s).`)
             process.exit(0)
         } catch (err) {

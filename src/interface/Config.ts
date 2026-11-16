@@ -113,6 +113,7 @@ export interface ConfigWebhook {
     pushplus?: WebhookPushPlusConfig
     serverchan?: WebhookServerChanConfig
     clawbot?: WebhookClawBotConfig
+    wecom?: WebhookWeComConfig
     webhookLogFilter: LogFilter
 }
 
@@ -162,4 +163,19 @@ export interface WebhookServerChanConfig {
 export interface WebhookClawBotConfig {
     enabled?: boolean
     authFile?: string
+}
+
+/**
+ * 企业微信群机器人 Webhook 配置。
+ *
+ * webhookKey 为群机器人地址 key= 后面的 UUID，属于凭证，
+ * 只能通过环境变量 / GitHub Secrets 注入，禁止写入仓库。
+ */
+export interface WebhookWeComConfig {
+    enabled?: boolean
+    webhookKey?: string
+    /** 消息类型：markdown（默认）或 text */
+    msgType?: 'markdown' | 'text'
+    /** 消息标题，markdown 模式下作为加粗标题行 */
+    title?: string
 }
