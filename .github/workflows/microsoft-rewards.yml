@@ -1,0 +1,257 @@
+name: Microsoft Rewards
+
+# 手动触发 + 定时触发。
+# workflow_dispatch：可在 Actions 页面手动运行，支持覆盖少量运行参数。
+# schedule：每天定时执行一次（UTC 23:00 ≈ 北京时间次日 07:00）。
+on:
+    workflow_dispatch:
+        inputs:
+            clusters:
+                description: '并发集群数（账户数较少时保持 1）'
+                required: false
+                default: '1'
+                type: string
+            search_delay_min:
+                description: '搜索间隔下限（秒）。留空使用 config.ci.json 默认值'
+                required: false
+                default: ''
+                type: string
+            search_delay_max:
+                description: '搜索间隔上限（秒）。留空使用 config.ci.json 默认值'
+                required: false
+                default: ''
+                type: string
+            skip_run:
+                description: '仅做环境自检与配置校验，不真正执行任务'
+                required: false
+                default: false
+                type: boolean
+    schedule:
+        - cron: '0 23 * * *'
+
+# 同一时间只允许一个实例，避免多个账户并发登录触发风控。
+concurrency:
+    group: microsoft-rewards
+    cancel-in-progress: false
+
+permissions:
+    contents: read
+
+jobs:
+    run:
+        runs-on: ubuntu-latest
+        # 任务含长随机延迟（搜索间隔可达数分钟/次），预留充足时间。
+        timeout-minutes: 300
+
+        env:
+            TZ: Asia/Shanghai
+            # 避免 CI 里打印 Node 实验特性告警，保持日志干净。
+            NODE_NO_WARNINGS: '1'
+            # patchright 的 Chromium 装在 node_modules 内，随缓存一起复用。
+            PLAYWRIGHT_BROWSERS_PATH: '0'
+
+        steps:
+            - name: 检出代码
+              uses: actions/checkout@v4
+
+            - name: 安装 Node.js 24
+              uses: actions/setup-node@v4
+              with:
+                  node-version: '24'
+                  cache: npm
+
+            - name: 安装依赖
+              run: npm ci --ignore-scripts
+
+            - name: 安装 Chromium（patchright 隐身内核）
+              run: npx patchright install --with-deps chromium
+
+            - name: 编译 TypeScript
+              run: npm run build --ignore-scripts
+
+            - name: 准备配置（从 Secrets 注入，不落盘敏感值到日志）
+              env:
+                  # ── 账户凭据 ──────────────────────────────
+                  # 账号数量无需连续，槽位可跳过（ACCOUNT_2 存在而 ACCOUNT_1 缺省是允许的）。
+                  ACCOUNT_1_EMAIL: ${{ secrets.ACCOUNT_1_EMAIL }}
+                  ACCOUNT_1_PASSWORD: ${{ secrets.ACCOUNT_1_PASSWORD }}
+                  ACCOUNT_1_TOTP_SECRET: ${{ secrets.ACCOUNT_1_TOTP_SECRET }}
+                  ACCOUNT_1_RECOVERY_EMAIL: ${{ secrets.ACCOUNT_1_RECOVERY_EMAIL }}
+                  ACCOUNT_1_GEO_LOCALE: ${{ secrets.ACCOUNT_1_GEO_LOCALE }}
+                  ACCOUNT_1_LANG_CODE: ${{ secrets.ACCOUNT_1_LANG_CODE }}
+                  ACCOUNT_1_PROXY_HTTP: ${{ secrets.ACCOUNT_1_PROXY_HTTP }}
+                  ACCOUNT_1_PROXY_URL: ${{ secrets.ACCOUNT_1_PROXY_URL }}
+                  ACCOUNT_1_PROXY_PORT: ${{ secrets.ACCOUNT_1_PROXY_PORT }}
+                  ACCOUNT_1_PROXY_USERNAME: ${{ secrets.ACCOUNT_1_PROXY_USERNAME }}
+                  ACCOUNT_1_PROXY_PASSWORD: ${{ secrets.ACCOUNT_1_PROXY_PASSWORD }}
+
+                  ACCOUNT_2_EMAIL: ${{ secrets.ACCOUNT_2_EMAIL }}
+                  ACCOUNT_2_PASSWORD: ${{ secrets.ACCOUNT_2_PASSWORD }}
+                  ACCOUNT_2_TOTP_SECRET: ${{ secrets.ACCOUNT_2_TOTP_SECRET }}
+                  ACCOUNT_2_RECOVERY_EMAIL: ${{ secrets.ACCOUNT_2_RECOVERY_EMAIL }}
+                  ACCOUNT_2_GEO_LOCALE: ${{ secrets.ACCOUNT_2_GEO_LOCALE }}
+                  ACCOUNT_2_LANG_CODE: ${{ secrets.ACCOUNT_2_LANG_CODE }}
+                  ACCOUNT_2_PROXY_HTTP: ${{ secrets.ACCOUNT_2_PROXY_HTTP }}
+                  ACCOUNT_2_PROXY_URL: ${{ secrets.ACCOUNT_2_PROXY_URL }}
+                  ACCOUNT_2_PROXY_PORT: ${{ secrets.ACCOUNT_2_PROXY_PORT }}
+                  ACCOUNT_2_PROXY_USERNAME: ${{ secrets.ACCOUNT_2_PROXY_USERNAME }}
+                  ACCOUNT_2_PROXY_PASSWORD: ${{ secrets.ACCOUNT_2_PROXY_PASSWORD }}
+
+                  ACCOUNT_3_EMAIL: ${{ secrets.ACCOUNT_3_EMAIL }}
+                  ACCOUNT_3_PASSWORD: ${{ secrets.ACCOUNT_3_PASSWORD }}
+                  ACCOUNT_3_TOTP_SECRET: ${{ secrets.ACCOUNT_3_TOTP_SECRET }}
+                  ACCOUNT_3_RECOVERY_EMAIL: ${{ secrets.ACCOUNT_3_RECOVERY_EMAIL }}
+                  ACCOUNT_3_GEO_LOCALE: ${{ secrets.ACCOUNT_3_GEO_LOCALE }}
+                  ACCOUNT_3_LANG_CODE: ${{ secrets.ACCOUNT_3_LANG_CODE }}
+                  ACCOUNT_3_PROXY_HTTP: ${{ secrets.ACCOUNT_3_PROXY_HTTP }}
+                  ACCOUNT_3_PROXY_URL: ${{ secrets.ACCOUNT_3_PROXY_URL }}
+                  ACCOUNT_3_PROXY_PORT: ${{ secrets.ACCOUNT_3_PROXY_PORT }}
+                  ACCOUNT_3_PROXY_USERNAME: ${{ secrets.ACCOUNT_3_PROXY_USERNAME }}
+                  ACCOUNT_3_PROXY_PASSWORD: ${{ secrets.ACCOUNT_3_PROXY_PASSWORD }}
+
+                  # ── 推送 ────────────────────────────────────
+                  # 企业微信群机器人 key（形如 693axxx6-7aoc-4bc4-97a0-0ec2sifa5aaa）。
+                  # 仅作为 key 传入，完整 URL 由代码拼接，避免误传整条 webhook 地址。
+                  CONFIG_WECOM_ENABLED: ${{ secrets.WECOM_ENABLED || 'true' }}
+                  CONFIG_WECOM_WEBHOOK_KEY: ${{ secrets.WECOM_WEBHOOK_KEY }}
+                  CONFIG_WECOM_MSGTYPE: ${{ secrets.WECOM_MSGTYPE || 'markdown' }}
+                  CONFIG_WECOM_TITLE: ${{ secrets.WECOM_TITLE || 'Microsoft Rewards 任务摘要' }}
+
+                  # ── 其他可选覆盖 ────────────────────────────
+                  CONFIG_CHINA_API_APPKEY: ${{ secrets.CHINA_API_APPKEY }}
+                  CONFIG_CLUSTERS: ${{ inputs.clusters || '1' }}
+                  CONFIG_SEARCH_DELAY_MIN: ${{ inputs.search_delay_min }}
+                  CONFIG_SEARCH_DELAY_MAX: ${{ inputs.search_delay_max }}
+              run: |
+                  set -euo pipefail
+
+                  # 先把账号写进 .env（脚本通过 ensureEnvLoaded 读取）。
+                  # 使用 printf 而非 echo，避免密码中的特殊字符被解释。
+                  : > .env
+                  write_account() {
+                      local idx="$1"
+                      local email_var="ACCOUNT_${idx}_EMAIL"
+                      local email="${!email_var:-}"
+                      [ -z "$email" ] && return 0
+                      {
+                          printf '%s=%s\n' "$email_var" "$email"
+                          for field in PASSWORD TOTP_SECRET RECOVERY_EMAIL GEO_LOCALE LANG_CODE PROXY_HTTP PROXY_URL PROXY_PORT PROXY_USERNAME PROXY_PASSWORD; do
+                              var="ACCOUNT_${idx}_${field}"
+                              value="${!var:-}"
+                              # 注意：不能用 `[ -n "$value" ] && printf ...`，
+                              # 空值时该表达式返回 1，在 set -e 下会终止脚本。必须用 if 块。
+                              if [ -n "$value" ]; then
+                                  printf '%s=%s\n' "$var" "$value"
+                              fi
+                          done
+                      } >> .env
+                  }
+                  for i in 1 2 3; do write_account "$i"; done
+
+                  if [ ! -s .env ]; then
+                      echo "::error::未检测到任何账号。请在仓库 Settings → Secrets 中配置 ACCOUNT_1_EMAIL 等变量。"
+                      exit 1
+                  fi
+
+                  # 只输出已配置的账号槽位数量，不输出邮箱/密码等敏感内容。
+                  echo "已配置账号槽位: $(grep -c '_EMAIL=' .env)"
+
+                  # 从 CI 模板生成运行配置，再叠加 CONFIG_* 环境变量覆盖。
+                  cp config.ci.json config.json
+                  node dist/util/ConfigEnvOverrides.js apply --config config.json
+
+                  # 强制无头：CI 环境无显示器，必须走 headless 分支。
+                  node -e "
+                    const fs=require('fs');
+                    const c=JSON.parse(fs.readFileSync('config.json','utf8'));
+                    c.headless=true;
+                    if(c.humanize){c.humanize.enabled=false;c.humanize.skipWhenCompletedToday=false;}
+                    if(c.webhook?.clawbot){c.webhook.clawbot.enabled=false;}
+                    fs.writeFileSync('config.json',JSON.stringify(c,null,2));
+                    console.log('已强制 headless=true，关闭 humanize 与 clawbot 交互');
+                  "
+
+                  # 自检：配置能否通过校验（不真正跑任务）。
+                  node -e "
+                    const {validateConfig}=require('./dist/util/Validator.js');
+                    const c=JSON.parse(require('fs').readFileSync('config.json','utf8'));
+                    const v=validateConfig(c);
+                    console.log('配置校验通过 | headless='+v.headless+' | clusters='+v.clusters+' | wecom='+(v.webhook?.wecom?.enabled??false));
+                  "
+
+            - name: 执行任务（无头）
+              if: ${{ !inputs.skip_run }}
+              env:
+                  ACCOUNT_1_EMAIL: ${{ secrets.ACCOUNT_1_EMAIL }}
+                  ACCOUNT_1_PASSWORD: ${{ secrets.ACCOUNT_1_PASSWORD }}
+                  ACCOUNT_1_TOTP_SECRET: ${{ secrets.ACCOUNT_1_TOTP_SECRET }}
+                  ACCOUNT_1_RECOVERY_EMAIL: ${{ secrets.ACCOUNT_1_RECOVERY_EMAIL }}
+                  ACCOUNT_1_GEO_LOCALE: ${{ secrets.ACCOUNT_1_GEO_LOCALE }}
+                  ACCOUNT_1_LANG_CODE: ${{ secrets.ACCOUNT_1_LANG_CODE }}
+                  ACCOUNT_1_PROXY_HTTP: ${{ secrets.ACCOUNT_1_PROXY_HTTP }}
+                  ACCOUNT_1_PROXY_URL: ${{ secrets.ACCOUNT_1_PROXY_URL }}
+                  ACCOUNT_1_PROXY_PORT: ${{ secrets.ACCOUNT_1_PROXY_PORT }}
+                  ACCOUNT_1_PROXY_USERNAME: ${{ secrets.ACCOUNT_1_PROXY_USERNAME }}
+                  ACCOUNT_1_PROXY_PASSWORD: ${{ secrets.ACCOUNT_1_PROXY_PASSWORD }}
+                  ACCOUNT_2_EMAIL: ${{ secrets.ACCOUNT_2_EMAIL }}
+                  ACCOUNT_2_PASSWORD: ${{ secrets.ACCOUNT_2_PASSWORD }}
+                  ACCOUNT_2_TOTP_SECRET: ${{ secrets.ACCOUNT_2_TOTP_SECRET }}
+                  ACCOUNT_2_RECOVERY_EMAIL: ${{ secrets.ACCOUNT_2_RECOVERY_EMAIL }}
+                  ACCOUNT_2_GEO_LOCALE: ${{ secrets.ACCOUNT_2_GEO_LOCALE }}
+                  ACCOUNT_2_LANG_CODE: ${{ secrets.ACCOUNT_2_LANG_CODE }}
+                  ACCOUNT_2_PROXY_HTTP: ${{ secrets.ACCOUNT_2_PROXY_HTTP }}
+                  ACCOUNT_2_PROXY_URL: ${{ secrets.ACCOUNT_2_PROXY_URL }}
+                  ACCOUNT_2_PROXY_PORT: ${{ secrets.ACCOUNT_2_PROXY_PORT }}
+                  ACCOUNT_2_PROXY_USERNAME: ${{ secrets.ACCOUNT_2_PROXY_USERNAME }}
+                  ACCOUNT_2_PROXY_PASSWORD: ${{ secrets.ACCOUNT_2_PROXY_PASSWORD }}
+                  ACCOUNT_3_EMAIL: ${{ secrets.ACCOUNT_3_EMAIL }}
+                  ACCOUNT_3_PASSWORD: ${{ secrets.ACCOUNT_3_PASSWORD }}
+                  ACCOUNT_3_TOTP_SECRET: ${{ secrets.ACCOUNT_3_TOTP_SECRET }}
+                  ACCOUNT_3_RECOVERY_EMAIL: ${{ secrets.ACCOUNT_3_RECOVERY_EMAIL }}
+                  ACCOUNT_3_GEO_LOCALE: ${{ secrets.ACCOUNT_3_GEO_LOCALE }}
+                  ACCOUNT_3_LANG_CODE: ${{ secrets.ACCOUNT_3_LANG_CODE }}
+                  ACCOUNT_3_PROXY_HTTP: ${{ secrets.ACCOUNT_3_PROXY_HTTP }}
+                  ACCOUNT_3_PROXY_URL: ${{ secrets.ACCOUNT_3_PROXY_URL }}
+                  ACCOUNT_3_PROXY_PORT: ${{ secrets.ACCOUNT_3_PROXY_PORT }}
+                  ACCOUNT_3_PROXY_USERNAME: ${{ secrets.ACCOUNT_3_PROXY_USERNAME }}
+                  ACCOUNT_3_PROXY_PASSWORD: ${{ secrets.ACCOUNT_3_PROXY_PASSWORD }}
+              run: |
+                  set -o pipefail
+                  # tee 同时保留完整输出用于排查；日志里出现的邮箱由 Console 过滤器/脱敏处理。
+                  node dist/index.js 2>&1 | tee run.log
+                  exit ${PIPESTATUS[0]}
+
+            - name: 上传运行日志
+              if: always()
+              uses: actions/upload-artifact@v4
+              with:
+                  name: run-logs-${{ github.run_number }}
+                  path: |
+                      run.log
+                      logs/
+                  retention-days: 7
+                  if-no-files-found: ignore
+
+            - name: 失败提示
+              if: failure()
+              run: |
+                  echo "::error::Microsoft Rewards 任务执行失败，详情见 run.log 与 artifacts。"
+                  echo "::error::常见原因：账号密码/TOTP 失效、触发微软风控、代理不可用。"
+                  if [ -f run.log ]; then
+                      echo "---- 最后 40 行日志 ----"
+                      tail -n 40 run.log
+                      echo "------------------------"
+                  fi
+
+            - name: 写入运行摘要
+              if: always()
+              run: |
+                  if [ -f run.log ]; then
+                      {
+                          echo "### Microsoft Rewards 运行日志"
+                          echo ""
+                          echo '```'
+                          tail -n 200 run.log
+                          echo '```'
+                      } >> "$GITHUB_STEP_SUMMARY"
+                  fi
