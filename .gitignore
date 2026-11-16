@@ -3,6 +3,10 @@ __pycache__/
 *.py[cod]
 *$py.class
 
+# 依赖目录（严禁提交）
+node_modules/
+.npm/
+
 # C extensions
 *.so
 
